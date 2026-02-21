@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini Royale Prototype</title>
+    <style>
+        body { 
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            background-color: #2c3e50; 
+            color: white; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        }
+        canvas { 
+            background-color: #588e31; 
+            border: 4px solid #1a252f; 
+            border-radius: 8px; 
+            margin-top: 10px; 
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+        .ui-container { 
+            width: 400px; 
+            margin-top: 15px; 
+        }
+        .elixir-container { 
+            width: 100%; 
+            background-color: #1a252f; 
+            border-radius: 10px; 
+            height: 25px; 
+            position: relative; 
+            overflow: hidden; 
+            border: 2px solid #000; 
+        }
+        .elixir-bar { 
+            height: 100%; 
+            background-color: #d11cd4; 
+            width: 50%; 
+            transition: width 0.1s linear; 
+        }
+        .elixir-text { 
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            text-align: center; 
+            line-height: 25px; 
+            font-weight: bold; 
+            text-shadow: 1px 1px 2px black; 
+        }
+        .instructions { 
+            font-size: 14px; 
+            margin-top: 10px; 
+            color: #bdc3c7; 
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Mini Royale Arena</h2>
+    <canvas id="arena" width="400" height="600"></canvas>
+    
+    <div class="ui-container">
+        <div class="elixir-container">
+            <div class="elixir-bar" id="elixirBar"></div>
+            <div class="elixir-text"><span id="elixirText">5</span> / 10</div>
+        </div>
+        <div class="instructions">Click on your side (bottom half) to spawn a Knight (Cost: 3 Elixir)</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('arena');
+        const ctx = canvas.getContext('2d');
+        
+        let elixir = 5;
+        let lastTime = performance.now();
+        let gameOver = false;
+        
+        // King Towers
+        const towers = {
+            player: { x: 200, y: 530, hp: 2000, maxHp: 2000, color: '#3498db' },
+            enemy: { x: 200, y: 70, hp: 2000, maxHp: 2000, color: '#e74c3c' }
+        };
+        
+        const troops = [];
+
+        class Troop {
+            constructor(x, y, isPlayer) {
+                this.x = x;
+                this.y = y;
+                this.isPlayer = isPlayer;
+                this.hp = 300;
+                this.maxHp = 300;
+                this.damage = 60; // DPS
+                this.speed = 50;  // Pixels per second
+                this.radius = 12;
+                this.color = isPlayer ? '#2980b9' : '#c0392b';
+                this.target = isPlayer ? towers.enemy : towers.player;
+            }
+
+            update(dt) {
+                const dx = this.target.x - this.x;
+                const dy = this.target.y - this.y;
+                const dist = Math.hypot(dx, dy);
+
+                // Move if out of range, attack if close
+                if (dist > 35) {
+                    this.x += (dx / dist) * this.speed * dt;
+                    this.y += (dy / dist) * this.speed * dt;
+                } else {
+                    this.target.hp -= this.damage * dt;
+                }
+            }
+
+            draw(ctx) {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                
+                // Floating Health bar
+                ctx.fillStyle = 'red';
+                ctx.fillRect(this.x - 12, this.y - 22, 24, 4);
+                ctx.fillStyle = 'lightgreen';
+                ctx.fillRect(this.x - 12, this.y - 22, 24 * (this.hp / this.maxHp), 4);
+            }
+        }
+
+        // Tap to Deploy
+        canvas.addEventListener('mousedown', (e) => {
+            if (gameOver) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            // Only deploy on player's side and if enough elixir
+            if (y > 300 && elixir >= 3) {
+                elixir -= 3;
+                troops.push(new Troop(x, y, true));
+            }
+        });
+
+        function drawTower(tower) {
+            ctx.fillStyle = tower.color;
+            ctx.fillRect(tower.x - 35, tower.y - 35, 70, 70);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeRect(tower.x - 35, tower.y - 35, 70, 70);
+
+            // Tower Health bar
+            ctx.fillStyle = 'red';
+            ctx.fillRect(tower.x - 35, tower.y - 50, 70, 8);
+            ctx.fillStyle = '#2ecc71';
+            ctx.fillRect(tower.x - 35, tower.y - 50, 70 * Math.max(0, tower.hp / tower.maxHp), 8);
+        }
+
+        function gameLoop(currentTime) {
+            if (gameOver) return;
+            
+            const dt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+
+            // Elixir Generation (1 unit per 2.8 seconds roughly)
+            if (elixir < 10) {
+                elixir += 0.35 * dt;
+            }
+            
+            document.getElementById('elixirBar').style.width = `${Math.min(100, elixir * 10)}%`;
+            document.getElementById('elixirText').innerText = Math.floor(elixir);
+
+            // Simple Enemy Bot Logic
+            if (Math.random() < 0.008) {
+                troops.push(new Troop(50 + Math.random() * 300, 100, false));
+            }
+
+            // Render Background
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Render River and Bridges
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(0, 280, canvas.width, 40);
+            ctx.fillStyle = '#f39c12';
+            ctx.fillRect(80, 280, 40, 40); 
+            ctx.fillRect(280, 280, 40, 40); 
+
+            // Render Entities
+            drawTower(towers.player);
+            drawTower(towers.enemy);
+
+            for (let i = troops.length - 1; i >= 0; i--) {
+                const t = troops[i];
+                t.update(dt);
+                t.draw(ctx);
+                
+                // Troop vs Troop Collision & Combat
+                for (let j = 0; j < troops.length; j++) {
+                    const other = troops[j];
+                    if (i !== j && t.isPlayer !== other.isPlayer) {
+                        const dist = Math.hypot(t.x - other.x, t.y - other.y);
+                        if (dist < t.radius + other.radius + 5) {
+                            t.hp -= other.damage * dt;
+                        }
+                    }
+                }
+
+                if (t.hp <= 0) {
+                    troops.splice(i, 1);
+                }
+            }
+
+            // Win Condition
+            if (towers.player.hp <= 0 || towers.enemy.hp <= 0) {
+                gameOver = true;
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 36px sans-serif';
+                ctx.textAlign = 'center';
+                const msg = towers.player.hp <= 0 ? "Opponent Wins!" : "3-Crown Victory!";
+                ctx.fillText(msg, canvas.width / 2, canvas.height / 2);
+                return;
+            }
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        requestAnimationFrame(gameLoop);
+    </script>
+</body>
+</html>
